@@ -1,0 +1,2 @@
+# do not upload this database, or any as this is generally bad practice!
+*.db
