@@ -58,13 +58,15 @@ app.get(`/api/fetch-xml`,  async (req, res) => {
         );
         const result = await parseStringPromise(response.data, {
             explicitArray: false,
-            ignoreAttrs: true,
-            attrNameProcessors: [name => `${name}`],
+            mergeAttrs: true,
         });
         const debate = result.akomaNtoso.debate;
+        const speakers = debate.meta.references.TLCPerson;
+        const roles = debate.meta.references.TLCRole;
+        const question = debate.debateBody.debateSection.question;
         const speech = debate.debateBody.debateSection.speech;
-        console.log(speech);
-        res.json(speech);   
+        console.log(speakers);
+        res.json({speakers, roles, question, speech});   
     } catch (error) {
         console.error(error.message);
     }
