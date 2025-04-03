@@ -1,21 +1,108 @@
 const express = require('express');
 const db = require('better-sqlite3')('epq.db');
+const userdb = require('better-sqlite3')('user.db');
 const cors = require('cors');
 const axios = require('axios');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 const { parseStringPromise } = require('xml2js');
 const xml2js = require('xml2js');
 
-const parser = new xml2js.Parser();
+
+const getUserByEmail = (email) => {
+    const row = userdb.prepare(`SELECT * FROM users WHERE email = ?`).get(email);        
+    if (!row) {
+            console.log("User not found");
+        } else {
+            user = row;
+            return user;
+        }
+}; 
+
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 const port = 3000;
 
 
 app.get('/', (req, res) => {
     res.send('Hello World!')
 });
+
+// These are the User endpoints
+
+app.get(`/users`, (req, res) => {
+    userdb.prepare(`SELECT * FROM users`, (err, rows) => {
+        if (err) {
+            console.error(err.message);
+            res.status(500).send(`Internal server error`);
+        } else {
+            res.send(rows);
+        }
+    });
+});
+
+app.get(`/users/:id`, (req, res) => {
+    const { id } = req.params;
+    userdb.get(`SELECT * FROM users WHERE id = ?`, [id], (err, row) => {
+        if (err) {
+            console.error(err.message);
+            res.status(500).send(`Internal server error`);
+        } else if (!row) {
+            res.status(404).send(`User not found`);
+        } else {
+            res.send(row);
+        }
+    });
+});
+
+app.post(`/users`, (req, res) => {
+    const email = (req.body.email);
+    const password = (req.body.password);
+    console.log(`email: ${email}, password: ${password}`);
+    if (!email || !password) {
+        res.status(400).send(`Invalid credentials provided, please try again`);
+    } else if (getUserByEmail(email)) {
+        res.status(400).send(`Invalid credentials provided, please try again`);
+    } else {
+        const insert = userdb.prepare(`INSERT INTO users (email, password, role) VALUES (?, ?, ?)`);
+        insert.run( email, password, "user");
+        try {
+            getUserByEmail(email);
+            if (!user) {
+                res.status(400).send()
+            } else {
+                res.status(201).send("User created successfully");
+            }
+        } catch (error) {
+            console.error(error.message);
+            res.status(500).send(`Internal server error`);
+        }
+    }
+});
+
+// Updating user endpoint
+// app.put(`/users/:id`, (req, res) => {
+//     const { id } = req.params;
+//     const { email, password, fName, lName} = req.body;
+     
+// })
+
+app.delete(`/users/:id`, (req, res) => {
+    const { id } = req.params;
+    userdb.run(`DELETE FROM pq-users where id = ?`, [id], function (err) {
+        if (err) {
+            console.error(err.message);
+            res.status(500).send(`Internal server error`);
+        } else if (this.change === 0) {
+            res.status(404).send(`User not found`);
+        } else {
+            res.status(204).send();
+        }
+    });
+});
+
+
+// These endpoints are PQ specific
 
 app.get('/pqs', (req, res) => {
     console.log("Trying the /pqs endpoint");
@@ -103,7 +190,7 @@ app.get(`/api/fetch-xml`,  async (req, res) => {
             mergeAttrs: true,
         });
         const debate = result.akomaNtoso.debate;
-        // This data may be used in a future iteration
+        // This data may be used in a future version
 
         // const speakers = debate.meta.references.TLCPerson;
         // const roles = debate.meta.references.TLCRole;
@@ -130,7 +217,7 @@ app.get(`/api/fetch-xml`,  async (req, res) => {
             speeches.push({speaker, fullText, eId});
         });
         // res.json({speakers, roles, questions, speeches});
-        return speeches;
+        res.json(speeches);
     } catch (error) {
         console.error(error.message);
     }
