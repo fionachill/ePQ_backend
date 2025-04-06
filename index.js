@@ -5,6 +5,7 @@ const cors = require('cors');
 const axios = require('axios');
 const { parseStringPromise } = require('xml2js');
 const xml2js = require('xml2js');
+const jwt = require('jsonwebtoken');
 
 
 const getUserByEmail = (email) => {
@@ -30,16 +31,18 @@ app.get('/', (req, res) => {
 
 // These are the User endpoints
 
-app.get(`/users`, (req, res) => {
-    userdb.prepare(`SELECT * FROM users`, (err, rows) => {
-        if (err) {
-            console.error(err.message);
-            res.status(500).send(`Internal server error`);
-        } else {
-            res.send(rows);
-        }
-    });
-});
+// app.get(`/users`, (req, res) => {
+//     userdb.prepare(`SELECT * FROM users`, (err, rows) => {
+//         if (err) {
+//             console.error(err.message);
+//             res.status(500).send(`Internal server error`);
+//         } else {
+//             res.send(rows);
+//         }
+//     });
+// });
+
+
 
 app.get(`/users/:id`, (req, res) => {
     const { id } = req.params;
@@ -54,6 +57,28 @@ app.get(`/users/:id`, (req, res) => {
         }
     });
 });
+
+app.post(`/login`, (req, res) => {
+    const email = (req.body.email);
+    const password = (req.body.password);
+    const user = getUserByEmail(email);
+    if (!user) {
+        return res.status(400).send("Invalid email provided, please try again");
+    } else if (user.password !== password) {
+        return res.status(400).send("Invalid password provided, please try again");
+    } else {
+        const payload = {
+            email: user.email,
+            role: user.role,
+            iat: Math.floor(Date.now() / 1000), // issued at (current timestamp)
+            exp: Math.floor(Date.now() /1000) + (60 * 60) // Expiration time (1 hour from now)
+        };
+        const token = jwt.sign(payload, process.env.JWT_SECRET, {algorithm: 'HS256'});
+        console.log(token);
+        res.status(200).json({token});
+    };
+});
+
 
 app.post(`/users`, (req, res) => {
     const email = (req.body.email);
