@@ -6,7 +6,9 @@ const axios = require('axios');
 const { parseStringPromise } = require('xml2js');
 const xml2js = require('xml2js');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
+const secretKey = 'sniffP3ckf@ncyCANDLE';
 
 const getUserByEmail = (email) => {
     const row = userdb.prepare(`SELECT * FROM users WHERE email = ?`).get(email);        
@@ -30,7 +32,7 @@ app.get('/', (req, res) => {
 });
 
 // These are the User endpoints
-
+// This endpoint is not being used at present as it could be a security risk
 // app.get(`/users`, (req, res) => {
 //     userdb.prepare(`SELECT * FROM users`, (err, rows) => {
 //         if (err) {
@@ -58,50 +60,54 @@ app.get(`/users/:id`, (req, res) => {
     });
 });
 
-app.post(`/login`, (req, res) => {
+app.post(`/login`, async (req, res) => {
     const email = (req.body.email);
-    const password = (req.body.password);
-    const user = getUserByEmail(email);
-    if (!user) {
+    const enteredPassword = (req.body.password);
+    const userExists = getUserByEmail(email);
+    if (!userExists) {
         return res.status(400).send("Invalid email provided, please try again");
-    } else if (user.password !== password) {
-        return res.status(400).send("Invalid password provided, please try again");
     } else {
-        const payload = {
-            email: user.email,
-            role: user.role,
-            iat: Math.floor(Date.now() / 1000), // issued at (current timestamp)
-            exp: Math.floor(Date.now() /1000) + (60 * 60) // Expiration time (1 hour from now)
-        };
-        const token = jwt.sign(payload, process.env.JWT_SECRET, {algorithm: 'HS256'});
-        console.log(token);
-        res.status(200).json({token});
+        const user = userExists;
+        await bcrypt.compare(enteredPassword, user.password, (err, result) => {
+            if (result) {
+                console.log("Password match");
+                const payload = {
+                    email: user.email,
+                    role: user.role,
+                    iat: Math.floor(Date.now() / 1000), // issued at (current timestamp)
+                    exp: Math.floor(Date.now() /1000) + (60 * 60) // Expiration time (1 hour from now)
+                };
+                console.log(payload);
+                console.log(process.env.JWT_SECRET);
+                const token = jwt.sign(payload, secretKey, {algorithm: 'HS256'});
+                console.log(token);
+                res.status(200).json({token});
+            } else {
+                console.log("Password does not match");
+                res.status(400).send("Invalid credentials provided, please try again");
+            }
+        });
     };
 });
 
 
-app.post(`/users`, (req, res) => {
+app.post(`/users`, async (req, res) => {
+    const existingUser = getUserByEmail(req.body.email);
+    if (existingUser) {
+        return res.status(400).send(`Invalid credentials provided`);
+    }
+    const password = req.body.password;
+    const hash = await bcrypt.hash(password, 10);
+    console.log(hash);
     const email = (req.body.email);
-    const password = (req.body.password);
-    console.log(`email: ${email}, password: ${password}`);
-    if (!email || !password) {
-        res.status(400).send(`Invalid credentials provided, please try again`);
-    } else if (getUserByEmail(email)) {
-        res.status(400).send(`Invalid credentials provided, please try again`);
-    } else {
-        const insert = userdb.prepare(`INSERT INTO users (email, password, role) VALUES (?, ?, ?)`);
-        insert.run( email, password, "user");
-        try {
-            getUserByEmail(email);
-            if (!user) {
-                res.status(400).send()
-            } else {
-                res.status(201).send("User created successfully");
-            }
-        } catch (error) {
-            console.error(error.message);
-            res.status(500).send(`Internal server error`);
-        }
+    const insert = userdb.prepare(`INSERT INTO users (email, password, role) VALUES (?, ?, ?)`);
+    insert.run( email, hash, "user");
+    const user = getUserByEmail(email);
+    if(user) {
+        res.status(201).send(`User created successfully`);
+    }
+    else {
+        res.status(400).send(`User not created`);
     }
 });
 
@@ -215,17 +221,6 @@ app.get(`/api/fetch-xml`,  async (req, res) => {
             mergeAttrs: true,
         });
         const debate = result.akomaNtoso.debate;
-        // This data may be used in a future version
-
-        // const speakers = debate.meta.references.TLCPerson;
-        // const roles = debate.meta.references.TLCRole;
-        // const questionRes = debate.debateBody.debateSection.question;
-        // const questions = [];
-        // questionRes.forEach(questionRes => {
-        //     asker = questionRes.p.b[0];
-        //     recipient = questionRes.p.b[1];
-        //     questions.push({asker, recipient});
-        // });
         const speechRes = debate.debateBody.debateSection.speech;
         const speeches = [];
         speechRes.forEach(speechRes => {
@@ -241,7 +236,6 @@ app.get(`/api/fetch-xml`,  async (req, res) => {
             }
             speeches.push({speaker, fullText, eId});
         });
-        // res.json({speakers, roles, questions, speeches});
         res.json(speeches);
     } catch (error) {
         console.error(error.message);
